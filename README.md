@@ -1,6 +1,6 @@
 # OpenClaw Feishu Cron Kit
 
-> 一套从生产环境抽离出来的飞书消息发送机制项目，聚焦 3 个真实场景：模板化发送、固定话题持续回复、失败自动补发。
+> 让 OpenClaw 把日报、巡检、内容发布和监控结果稳定发到飞书固定话题的消息投递项目。
 
 ## 这是什么
 
@@ -11,7 +11,7 @@
 - 希望每次完整报告之后，再自动补一条**摘要 reply**
 - 希望飞书临时失败时，不要等到下一小时或明天才恢复，而是自动补发
 
-这个项目不是为了开源而重新设计的一套 demo，而是从真实生产链路里抽出一条最有复用价值的主机制，并在脱敏后整理成独立仓库。
+这个仓库不是“为了开源而发明一套新的通用框架”，而是把真实生产里已经跑顺的飞书投递主链路整理出来，方便你复用到自己的 OpenClaw、多 Agent 调度系统或 cron 环境里。
 
 ```ascii
 你会得到的能力
@@ -75,6 +75,32 @@
 - 想做“固定话题沉淀 + 自动摘要 + 自动重试”的人
 - 不想一上来就接复杂框架、只想先跑通的人
 
+## 它解决的不是“发一条消息”，而是“稳定投递一类业务结果”
+
+```ascii
+常见业务结果
+────────────────────────────────
+内容侧
+  -> AI 热点扫描
+  -> 深度选题研究
+  -> 即刻自动化内容创作
+  -> Twitter/X 社媒监控
+
+工程侧
+  -> 系统状态巡检
+
+进化侧
+  -> Skill 挖掘
+  -> Skill 试用评估
+  -> Skill 智能分发
+
+总管侧
+  -> 每日日记汇总
+  -> 每日知识整理
+```
+
+也就是说，这个仓库更像一套“飞书结果投递底座”，而不是一个单独的消息脚本。
+
 ## 项目结构
 
 ```ascii
@@ -126,6 +152,148 @@ cron / agent
   -> 直接失败
   -> 不进入补发队列
 ```
+
+## 如果你想让“小龙虾 OpenClaw”来学习和部署这套仓库
+
+这里建议你分成两个视角理解，不要混在一起：
+
+```ascii
+视角 A：学习
+  -> 让 OpenClaw 理解这套机制怎么工作
+
+视角 B：部署
+  -> 让 OpenClaw 所在服务器真正把它跑起来
+```
+
+### 视角 A：让 OpenClaw 先“学习”这个 GitHub 仓库
+
+最推荐的做法，不是直接把整个仓库当 Skill 导入，而是先让 Agent 读这些文件：
+
+- [README.md](README.md)
+- [examples/feishu-templates.example.json](examples/feishu-templates.example.json)
+- [examples/jobs.example.json](examples/jobs.example.json)
+- [examples/accounts.example.json](examples/accounts.example.json)
+- [examples/payloads](examples/payloads)
+
+学习重点：
+
+```ascii
+OpenClaw 需要学会的 5 件事
+────────────────────────────────
+1. 模板决定 route，不是 agent 自己乱传群 ID
+2. job_id / binding_key 决定固定话题身份
+3. 完整卡片和摘要 reply 要分层
+4. 失败后不要等下个周期，要补发
+5. 多 agent 下，同一个人可能有多个 open_id
+```
+
+如果你是让 Agent 通过 GitHub 仓库理解这套机制，推荐直接给它这样的任务描述：
+
+```text
+请先阅读 openclaw-feishu-cron-kit 仓库的 README、examples/feishu-templates.example.json、
+examples/jobs.example.json 和 examples/payloads/ 下的示例，
+总结这套飞书固定话题、模板发送和失败补发机制，
+再按我们的生产任务改写成适合当前 OpenClaw 环境的配置和调用方式。
+```
+
+### 视角 B：让 OpenClaw 真正“部署”这套仓库
+
+这个仓库本质上是一个独立项目，不是一个单独的 Skill 包。  
+所以如果你在用 ClawPilot / OpenClaw 的「从 GitHub 仓库导入 Skill」能力，要注意：
+
+```ascii
+当前真实入口
+────────────────────────────────
+ClawPilot 的 import-github
+  -> 适合导入单个 Skill 目录或 Skill 仓库
+  -> 不适合把整个 openclaw-feishu-cron-kit 直接当一个 Skill 导入
+
+这个仓库更适合：
+  -> clone 到 OpenClaw 服务器
+  -> 作为公共消息投递项目运行
+```
+
+也就是说，推荐部署方式是下面这样：
+
+```ascii
+部署推荐路径
+────────────────────────────────
+/root/.openclaw/vendor/openclaw-feishu-cron-kit
+```
+
+#### 第一步：把仓库拉到 OpenClaw 服务器
+
+```bash
+cd /root/.openclaw/vendor
+git clone https://github.com/mileson/openclaw-feishu-cron-kit.git
+cd openclaw-feishu-cron-kit
+```
+
+#### 第二步：安装依赖
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e .
+```
+
+#### 第三步：准备你自己的生产配置
+
+不要直接改 example 文件，建议复制一份生产配置：
+
+```bash
+mkdir -p config
+cp examples/feishu-templates.example.json config/feishu-templates.json
+cp examples/jobs.example.json config/jobs.json
+cp examples/accounts.example.json config/accounts.json
+```
+
+然后把 `config/` 里的占位值改成你自己的真实值。
+
+#### 第四步：让 OpenClaw 的定时任务调用它
+
+定时任务本身只负责产出数据，然后调用这个仓库的发送器：
+
+```bash
+python3 /root/.openclaw/vendor/openclaw-feishu-cron-kit/scripts/send_message.py \
+  --mode template \
+  --agent-id blogger \
+  --job-id blogger-ai-hotspot-hourly \
+  --jobs-file /root/.openclaw/vendor/openclaw-feishu-cron-kit/config/jobs.json \
+  --templates-file /root/.openclaw/vendor/openclaw-feishu-cron-kit/config/feishu-templates.json \
+  --accounts-file /root/.openclaw/vendor/openclaw-feishu-cron-kit/config/accounts.json \
+  --template ai-hotspot \
+  --data '...'
+```
+
+#### 第五步：把失败补发 worker 也接上
+
+```cron
+*/5 * * * * cd /root/.openclaw/vendor/openclaw-feishu-cron-kit && /root/.openclaw/vendor/openclaw-feishu-cron-kit/.venv/bin/python scripts/process_retry_queue.py >> logs/retry-worker.log 2>&1
+```
+
+### 如果你一定要把它做成“可导入的 Skill”
+
+那建议走第二阶段，而不是直接把整个仓库塞进 Skill 导入入口：
+
+```ascii
+第二阶段推荐做法
+────────────────────────────────
+当前仓库
+  -> 作为独立消息投递项目保留
+
+另做一个 skill 仓库
+  -> skill 内只保留：
+     - SKILL.md
+     - 调用 send_message.py 的标准脚本
+     - 对应的最小配置模板
+
+这样 ClawPilot 的 import-github
+  -> 才能和当前产品入口完全匹配
+```
+
+如果后面你要，我可以继续帮你把这个仓库再拆出一个
+`openclaw-feishu-delivery-skill` 配套 Skill 仓库，专门给 ClawPilot 的 GitHub Skill 导入使用。
 
 ## 运行前你要准备什么
 
@@ -221,13 +389,13 @@ FEISHU_APP_SECRET=your_real_app_secret
 
 如果你不想用环境变量，也可以参考：
 
-- [accounts.example.json](/Users/mileson/Workspace/AI%20元宇宙/openclaw-feishu-cron-kit/examples/accounts.example.json)
+- [accounts.example.json](examples/accounts.example.json)
 
 ### 第三步：改模板配置
 
 打开：
 
-- [feishu-templates.example.json](/Users/mileson/Workspace/AI%20元宇宙/openclaw-feishu-cron-kit/examples/feishu-templates.example.json)
+- [feishu-templates.example.json](examples/feishu-templates.example.json)
 
 你至少要改 3 个字段：
 
@@ -281,7 +449,7 @@ evolution
 
 打开：
 
-- [jobs.example.json](/Users/mileson/Workspace/AI%20元宇宙/openclaw-feishu-cron-kit/examples/jobs.example.json)
+- [jobs.example.json](examples/jobs.example.json)
 
 你要让每个任务有一个稳定的 `job_id`。  
 这个很重要，因为它会影响固定话题身份和补发记录。
@@ -309,12 +477,12 @@ evolution
 
 示例已经给你了：
 
-- [ai-hotspot.example.json](/Users/mileson/Workspace/AI%20元宇宙/openclaw-feishu-cron-kit/examples/payloads/ai-hotspot.example.json)
-- [daily-diary.example.json](/Users/mileson/Workspace/AI%20元宇宙/openclaw-feishu-cron-kit/examples/payloads/daily-diary.example.json)
-- [twitter-monitor.example.json](/Users/mileson/Workspace/AI%20元宇宙/openclaw-feishu-cron-kit/examples/payloads/twitter-monitor.example.json)
-- [system-status.example.json](/Users/mileson/Workspace/AI%20元宇宙/openclaw-feishu-cron-kit/examples/payloads/system-status.example.json)
-- [skill-trial.example.json](/Users/mileson/Workspace/AI%20元宇宙/openclaw-feishu-cron-kit/examples/payloads/skill-trial.example.json)
-- [jike-publish.example.json](/Users/mileson/Workspace/AI%20元宇宙/openclaw-feishu-cron-kit/examples/payloads/jike-publish.example.json)
+- [ai-hotspot.example.json](examples/payloads/ai-hotspot.example.json)
+- [daily-diary.example.json](examples/payloads/daily-diary.example.json)
+- [twitter-monitor.example.json](examples/payloads/twitter-monitor.example.json)
+- [system-status.example.json](examples/payloads/system-status.example.json)
+- [skill-trial.example.json](examples/payloads/skill-trial.example.json)
+- [jike-publish.example.json](examples/payloads/jike-publish.example.json)
 
 你最需要关心的是 `thread_summary`：
 
