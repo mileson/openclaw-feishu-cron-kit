@@ -1,4 +1,4 @@
-# OpenClaw Feishu Cron Kit
+# OpenClaw Feishu Delivery
 
 > 让 OpenClaw 把日报、巡检、内容发布和监控结果稳定发到飞书固定话题的消息投递项目。
 
@@ -104,7 +104,7 @@
 ## 项目结构
 
 ```ascii
-openclaw-feishu-cron-kit
+openclaw-feishu-delivery
 ├─ src/openclaw_feishu_cron_kit/
 │  ├─ core.py              # 核心逻辑：模板发送、固定话题、补发队列
 │  ├─ renderer.py          # 卡片和摘要渲染
@@ -190,7 +190,7 @@ OpenClaw 需要学会的 5 件事
 如果你是让 Agent 通过 GitHub 仓库理解这套机制，推荐直接给它这样的任务描述：
 
 ```text
-请先阅读 openclaw-feishu-cron-kit 仓库的 README、examples/feishu-templates.example.json、
+请先阅读 openclaw-feishu-delivery 仓库的 README、examples/feishu-templates.example.json、
 examples/jobs.example.json 和 examples/payloads/ 下的示例，
 总结这套飞书固定话题、模板发送和失败补发机制，
 再按我们的生产任务改写成适合当前 OpenClaw 环境的配置和调用方式。
@@ -206,7 +206,7 @@ examples/jobs.example.json 和 examples/payloads/ 下的示例，
 ────────────────────────────────
 ClawPilot 的 import-github
   -> 适合导入单个 Skill 目录或 Skill 仓库
-  -> 不适合把整个 openclaw-feishu-cron-kit 直接当一个 Skill 导入
+  -> 不适合把整个 openclaw-feishu-delivery 直接当一个 Skill 导入
 
 这个仓库更适合：
   -> clone 到 OpenClaw 服务器
@@ -218,15 +218,15 @@ ClawPilot 的 import-github
 ```ascii
 部署推荐路径
 ────────────────────────────────
-/root/.openclaw/vendor/openclaw-feishu-cron-kit
+/root/.openclaw/vendor/openclaw-feishu-delivery
 ```
 
 #### 第一步：把仓库拉到 OpenClaw 服务器
 
 ```bash
 cd /root/.openclaw/vendor
-git clone https://github.com/mileson/openclaw-feishu-cron-kit.git
-cd openclaw-feishu-cron-kit
+git clone https://github.com/mileson/openclaw-feishu-delivery.git
+cd openclaw-feishu-delivery
 ```
 
 #### 第二步：安装依赖
@@ -255,13 +255,13 @@ cp examples/accounts.example.json config/accounts.json
 定时任务本身只负责产出数据，然后调用这个仓库的发送器：
 
 ```bash
-python3 /root/.openclaw/vendor/openclaw-feishu-cron-kit/scripts/send_message.py \
+python3 /root/.openclaw/vendor/openclaw-feishu-delivery/scripts/send_message.py \
   --mode template \
   --agent-id blogger \
   --job-id blogger-ai-hotspot-hourly \
-  --jobs-file /root/.openclaw/vendor/openclaw-feishu-cron-kit/config/jobs.json \
-  --templates-file /root/.openclaw/vendor/openclaw-feishu-cron-kit/config/feishu-templates.json \
-  --accounts-file /root/.openclaw/vendor/openclaw-feishu-cron-kit/config/accounts.json \
+  --jobs-file /root/.openclaw/vendor/openclaw-feishu-delivery/config/jobs.json \
+  --templates-file /root/.openclaw/vendor/openclaw-feishu-delivery/config/feishu-templates.json \
+  --accounts-file /root/.openclaw/vendor/openclaw-feishu-delivery/config/accounts.json \
   --template ai-hotspot \
   --data '...'
 ```
@@ -269,7 +269,7 @@ python3 /root/.openclaw/vendor/openclaw-feishu-cron-kit/scripts/send_message.py 
 #### 第五步：把失败补发 worker 也接上
 
 ```cron
-*/5 * * * * cd /root/.openclaw/vendor/openclaw-feishu-cron-kit && /root/.openclaw/vendor/openclaw-feishu-cron-kit/.venv/bin/python scripts/process_retry_queue.py >> logs/retry-worker.log 2>&1
+*/5 * * * * cd /root/.openclaw/vendor/openclaw-feishu-delivery && /root/.openclaw/vendor/openclaw-feishu-delivery/.venv/bin/python scripts/process_retry_queue.py >> logs/retry-worker.log 2>&1
 ```
 
 ### 如果你一定要把它做成“可导入的 Skill”
@@ -366,7 +366,7 @@ evolution agent
 ### 第一步：安装依赖
 
 ```bash
-cd openclaw-feishu-cron-kit
+cd openclaw-feishu-delivery
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e .
@@ -544,7 +544,7 @@ python3 scripts/process_retry_queue.py
 推荐每 5 分钟扫一次：
 
 ```cron
-*/5 * * * * cd /path/to/openclaw-feishu-cron-kit && /usr/bin/python3 scripts/process_retry_queue.py >> logs/retry-worker.log 2>&1
+*/5 * * * * cd /path/to/openclaw-feishu-delivery && /usr/bin/python3 scripts/process_retry_queue.py >> logs/retry-worker.log 2>&1
 ```
 
 ## 固定话题是怎么工作的

@@ -747,7 +747,7 @@ def build_settings_from_args(args: argparse.Namespace, entry_script: Path) -> Ap
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="OpenClaw Feishu Cron Kit")
+    parser = argparse.ArgumentParser(description="OpenClaw Feishu Delivery")
     parser.add_argument("--mode", choices=["template", "text", "retry-pending"], default="template")
     parser.add_argument("--template")
     parser.add_argument("--data")
