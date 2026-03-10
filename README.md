@@ -155,145 +155,127 @@ cron / agent
 
 ## 如果你想让“小龙虾 OpenClaw”来学习和部署这套仓库
 
-这里建议你分成两个视角理解，不要混在一起：
+最省事的方式，不是让用户自己去研究这个仓库结构，而是直接给“小龙虾 OpenClaw”一段明确提示词，让它按步骤完成学习、安装、接线和验证。
 
 ```ascii
-视角 A：学习
-  -> 让 OpenClaw 理解这套机制怎么工作
-
-视角 B：部署
-  -> 让 OpenClaw 所在服务器真正把它跑起来
-```
-
-### 视角 A：让 OpenClaw 先“学习”这个 GitHub 仓库
-
-最推荐的做法，不是直接把整个仓库当 Skill 导入，而是先让 Agent 读这些文件：
-
-- [README.md](README.md)
-- [examples/feishu-templates.example.json](examples/feishu-templates.example.json)
-- [examples/jobs.example.json](examples/jobs.example.json)
-- [examples/accounts.example.json](examples/accounts.example.json)
-- [examples/payloads](examples/payloads)
-
-学习重点：
-
-```ascii
-OpenClaw 需要学会的 5 件事
+推荐使用方式
 ────────────────────────────────
-1. 模板决定 route，不是 agent 自己乱传群 ID
-2. job_id / binding_key 决定固定话题身份
-3. 完整卡片和摘要 reply 要分层
-4. 失败后不要等下个周期，要补发
-5. 多 agent 下，同一个人可能有多个 open_id
+用户给小龙虾一句任务
+  -> 小龙虾先读这个仓库
+  -> 再按当前 OpenClaw 环境安装
+  -> 再替用户接好模板 / job / 重试
+  -> 最后发一条测试消息验证
 ```
 
-如果你是让 Agent 通过 GitHub 仓库理解这套机制，推荐直接给它这样的任务描述：
+建议让它重点阅读这些文件：
+
+```ascii
+优先阅读文件
+────────────────────────────────
+README.md
+examples/feishu-templates.example.json
+examples/jobs.example.json
+examples/accounts.example.json
+examples/payloads/
+```
+
+### 1. 学习用提示词
+
+先让它理解机制，不要一上来就改生产配置。
 
 ```text
 请先阅读 openclaw-feishu-delivery 仓库的 README、examples/feishu-templates.example.json、
 examples/jobs.example.json 和 examples/payloads/ 下的示例，
 总结这套飞书固定话题、模板发送和失败补发机制，
-再按我们的生产任务改写成适合当前 OpenClaw 环境的配置和调用方式。
+重点说明：
+1. 模板如何决定 route
+2. job_id / binding_key 如何决定固定话题
+3. 完整卡片与摘要 reply 如何分层
+4. 失败补发如何工作
+5. 多 agent 下为什么不能直接复用同一个 open_id
+
+先输出理解总结和实施计划，不要直接改生产文件。
 ```
 
-### 视角 B：让 OpenClaw 真正“部署”这套仓库
+### 2. 安装部署用提示词
 
-这个仓库本质上是一个独立项目，不是一个单独的 Skill 包。  
-所以如果你在用 ClawPilot / OpenClaw 的「从 GitHub 仓库导入 Skill」能力，要注意：
+当它已经理解机制后，再让它落环境。
+
+```text
+请把 openclaw-feishu-delivery 安装到当前 OpenClaw 服务器，要求：
+1. clone 到 /root/.openclaw/vendor/openclaw-feishu-delivery
+2. 创建虚拟环境并安装依赖
+3. 从 examples 复制出 config/feishu-templates.json、config/jobs.json、config/accounts.json
+4. 不要覆盖现有生产配置文件，先生成候选配置
+5. 输出安装结果、文件路径和下一步待补真实参数清单
+
+完成后不要直接启用生产定时任务，先等我确认。
+```
+
+### 3. 生产接线用提示词
+
+这一步适合让它把你们当前业务任务接到这个仓库上。
 
 ```ascii
-当前真实入口
+生产接线目标
 ────────────────────────────────
-ClawPilot 的 import-github
-  -> 适合导入单个 Skill 目录或 Skill 仓库
-  -> 不适合把整个 openclaw-feishu-delivery 直接当一个 Skill 导入
+blogger
+  -> AI 热点扫描
+  -> 深度选题研究
+  -> 即刻自动化内容创作
 
-这个仓库更适合：
-  -> clone 到 OpenClaw 服务器
-  -> 作为公共消息投递项目运行
+main
+  -> 每日日记汇总
+  -> 每日知识整理
+
+engineer
+  -> 系统状态巡检
+
+evolution
+  -> Skill 挖掘 / 试用 / 分发
 ```
 
-也就是说，推荐部署方式是下面这样：
+```text
+请基于 openclaw-feishu-delivery 仓库，按我们当前 OpenClaw 的生产任务做接线：
+1. 先读取仓库 README 和 examples 配置
+2. 识别当前服务器上哪些 agent 需要接入这个飞书投递底座
+3. 为每个 agent 生成对应的 templates / jobs / accounts 映射草案
+4. 不要直接覆盖旧配置，先输出差异清单
+5. 对每条任务说明：
+   - 发到哪个群
+   - 是否固定话题
+   - 话题标题是什么
+   - 摘要是否 @ 人
+   - 是否启用失败补发
 
-```ascii
-部署推荐路径
-────────────────────────────────
-/root/.openclaw/vendor/openclaw-feishu-delivery
+最后输出一份“待确认配置表”，等我确认后再执行。
 ```
 
-#### 第一步：把仓库拉到 OpenClaw 服务器
+### 4. 验证与排障提示词
 
-```bash
-cd /root/.openclaw/vendor
-git clone https://github.com/mileson/openclaw-feishu-delivery.git
-cd openclaw-feishu-delivery
+最后一步，不要只看配置，要让它真的验证。
+
+```text
+请检查 openclaw-feishu-delivery 在当前 OpenClaw 环境是否已经接通，要求：
+1. 抽查 1 条定时任务和 1 条日常对话消息链路
+2. 验证是否能正确发到固定话题
+3. 验证是否会自动补摘要 reply
+4. 验证失败补发队列是否可运行
+5. 如果发现问题，按“配置错误 / job_id 错误 / open_id 作用域错误 / 补发未接入”分类输出
+
+最后给我一份可执行的修复建议，不要只给现象。
 ```
 
-#### 第二步：安装依赖
+### 一句话用法
 
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e .
+如果你只想给用户一句最短可用提示词，推荐这一版：
+
+```text
+请阅读 https://github.com/mileson/openclaw-feishu-delivery ，
+理解这套飞书固定话题、模板发送和失败补发机制，
+然后按当前 OpenClaw 环境完成安装、生成生产配置草案，并给出验证步骤。
+先不要直接覆盖旧配置。
 ```
-
-#### 第三步：准备你自己的生产配置
-
-不要直接改 example 文件，建议复制一份生产配置：
-
-```bash
-mkdir -p config
-cp examples/feishu-templates.example.json config/feishu-templates.json
-cp examples/jobs.example.json config/jobs.json
-cp examples/accounts.example.json config/accounts.json
-```
-
-然后把 `config/` 里的占位值改成你自己的真实值。
-
-#### 第四步：让 OpenClaw 的定时任务调用它
-
-定时任务本身只负责产出数据，然后调用这个仓库的发送器：
-
-```bash
-python3 /root/.openclaw/vendor/openclaw-feishu-delivery/scripts/send_message.py \
-  --mode template \
-  --agent-id blogger \
-  --job-id blogger-ai-hotspot-hourly \
-  --jobs-file /root/.openclaw/vendor/openclaw-feishu-delivery/config/jobs.json \
-  --templates-file /root/.openclaw/vendor/openclaw-feishu-delivery/config/feishu-templates.json \
-  --accounts-file /root/.openclaw/vendor/openclaw-feishu-delivery/config/accounts.json \
-  --template ai-hotspot \
-  --data '...'
-```
-
-#### 第五步：把失败补发 worker 也接上
-
-```cron
-*/5 * * * * cd /root/.openclaw/vendor/openclaw-feishu-delivery && /root/.openclaw/vendor/openclaw-feishu-delivery/.venv/bin/python scripts/process_retry_queue.py >> logs/retry-worker.log 2>&1
-```
-
-### 如果你一定要把它做成“可导入的 Skill”
-
-那建议走第二阶段，而不是直接把整个仓库塞进 Skill 导入入口：
-
-```ascii
-第二阶段推荐做法
-────────────────────────────────
-当前仓库
-  -> 作为独立消息投递项目保留
-
-另做一个 skill 仓库
-  -> skill 内只保留：
-     - SKILL.md
-     - 调用 send_message.py 的标准脚本
-     - 对应的最小配置模板
-
-这样 ClawPilot 的 import-github
-  -> 才能和当前产品入口完全匹配
-```
-
-如果后面你要，我可以继续帮你把这个仓库再拆出一个
-`openclaw-feishu-delivery-skill` 配套 Skill 仓库，专门给 ClawPilot 的 GitHub Skill 导入使用。
 
 ## 运行前你要准备什么
 
