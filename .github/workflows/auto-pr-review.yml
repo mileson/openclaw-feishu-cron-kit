@@ -1,0 +1,184 @@
+name: Auto PR Review
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Pull request number to review
+        required: true
+        type: string
+      skip_ci_gate:
+        description: Skip CI gate when manually validating an existing PR
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  validate-pr:
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request_target' && !github.event.pull_request.draft)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      pr_number: ${{ steps.meta.outputs.pr_number }}
+    steps:
+      - name: Resolve PR number
+        id: meta
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "pr_number=${{ inputs.pr_number }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "pr_number=${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout PR merge ref
+        uses: actions/checkout@v4
+        with:
+          ref: refs/pull/${{ steps.meta.outputs.pr_number }}/merge
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e . pytest
+
+      - name: Run tests
+        run: pytest -q
+
+      - name: Run compile check
+        run: python -m compileall src scripts tests
+
+  review-and-merge:
+    needs: validate-pr
+    runs-on: ubuntu-latest
+    env:
+      AICODE_BASE_URL: ${{ vars.AICODE_BASE_URL }}
+      AICODE_MODEL: ${{ vars.AICODE_MODEL }}
+      AICODE_API_KEY: ${{ secrets.AICODE_API_KEY }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install requests
+
+      - name: Run AI review
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          python scripts/review_pr.py \
+            --repo "${{ github.repository }}" \
+            --pr-number "${{ needs.validate-pr.outputs.pr_number }}" \
+            --base-url "${AICODE_BASE_URL}" \
+            --model "${AICODE_MODEL}" > review-result.json
+          cat review-result.json
+
+      - name: Publish review comment
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ needs.validate-pr.outputs.pr_number }}
+        run: |
+          python - <<'PY'
+          import json, os, requests
+
+          pr_number = os.environ["PR_NUMBER"]
+          token = os.environ["GITHUB_TOKEN"]
+          repo = os.environ["GITHUB_REPOSITORY"]
+          result = json.load(open("review-result.json", "r", encoding="utf-8"))
+
+          if result["decision"] == "approve":
+              body = "## 自动审查结果\n\n✅ 已通过自动代码审查。\n\n" + result["summary"]
+          else:
+              lines = ["## 自动审查结果", "", "❌ 自动审查发现需要修复的问题。", "", result["summary"], ""]
+              for item in result["findings"]:
+                  lines.append(f"- [{item['severity']}] `{item['file']}` {item['title']}: {item['detail']}")
+              body = "\n".join(lines)
+
+          response = requests.post(
+              f"https://api.github.com/repos/{repo}/issues/{pr_number}/comments",
+              headers={
+                  "Accept": "application/vnd.github+json",
+                  "Authorization": f"Bearer {token}",
+                  "X-GitHub-Api-Version": "2022-11-28",
+              },
+              json={"body": body},
+              timeout=60,
+          )
+          response.raise_for_status()
+          PY
+
+      - name: Merge pull request
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ needs.validate-pr.outputs.pr_number }}
+          SKIP_CI_GATE: ${{ inputs.skip_ci_gate }}
+        run: |
+          python - <<'PY'
+          import json, os, requests, sys
+
+          result = json.load(open("review-result.json", "r", encoding="utf-8"))
+          if result["decision"] != "approve":
+              print("审查未通过，停止自动合并。")
+              sys.exit(0)
+
+          repo = os.environ["GITHUB_REPOSITORY"]
+          pr_number = os.environ["PR_NUMBER"]
+          token = os.environ["GITHUB_TOKEN"]
+          skip_ci_gate = os.environ.get("SKIP_CI_GATE", "").lower() == "true"
+
+          if skip_ci_gate:
+              print("手动验证模式，跳过额外 CI gate。")
+
+          merge_response = requests.put(
+              f"https://api.github.com/repos/{repo}/pulls/{pr_number}/merge",
+              headers={
+                  "Accept": "application/vnd.github+json",
+                  "Authorization": f"Bearer {token}",
+                  "X-GitHub-Api-Version": "2022-11-28",
+              },
+              json={
+                  "merge_method": "squash",
+                  "commit_title": f"Auto merge PR #{pr_number}",
+              },
+              timeout=60,
+          )
+          if merge_response.status_code not in {200, 201}:
+              raise SystemExit(f"自动合并失败: {merge_response.status_code} {merge_response.text}")
+
+          comment_body = result.get("merge_message") or "已通过自动审查并完成合并，感谢贡献。"
+          comment_response = requests.post(
+              f"https://api.github.com/repos/{repo}/issues/{pr_number}/comments",
+              headers={
+                  "Accept": "application/vnd.github+json",
+                  "Authorization": f"Bearer {token}",
+                  "X-GitHub-Api-Version": "2022-11-28",
+              },
+              json={"body": comment_body},
+              timeout=60,
+          )
+          comment_response.raise_for_status()
+          PY
