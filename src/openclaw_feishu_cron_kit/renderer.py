@@ -111,6 +111,10 @@ def build_summary_post(thread_title: str, summary_data: dict[str, Any]) -> dict[
         content.append([{"tag": "text", "text": footer}])
 
     return {
-        "title": f"{thread_title} · 最新摘要",
-        "content": content,
+        "post": {
+            "zh_cn": {
+                "title": f"{thread_title} · 最新摘要",
+                "content": content,
+            }
+        }
     }
