@@ -464,8 +464,20 @@ def maybe_send_thread_summary_reply(settings: AppSettings, access_token: str, th
     root_message_id = ((response_meta or {}).get("data") or {}).get("root_id") or ((response_meta or {}).get("data") or {}).get("message_id")
     if not root_message_id:
         raise ValueError("未能解析 root_message_id，无法发送摘要 reply")
-    content = build_summary_post(thread_options["title"], summary_data)
-    return reply_message_request(access_token, root_message_id, "post", content, "群话题摘要回复")
+    # 根据模板配置决定使用 post 还是 text
+    summary_config = (thread_options or {}).get("summary_reply") or {}
+    channel = summary_config.get("channel", "post")
+    
+    if channel == "text":
+        # 使用 text 类型
+        from .renderer import build_summary_text
+        content = build_summary_text(summary_data)
+        return reply_message_request(access_token, root_message_id, "text", content, "群话题摘要回复")
+    else:
+        # 默认使用 post 类型
+        from .renderer import build_summary_post
+        content = build_summary_post(thread_options["title"], summary_data)
+        return reply_message_request(access_token, root_message_id, "post", content, "群话题摘要回复")
 
 
 def load_retry_record(settings: AppSettings, record_id: str) -> dict[str, Any] | None:

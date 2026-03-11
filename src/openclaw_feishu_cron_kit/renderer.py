@@ -118,3 +118,37 @@ def build_summary_post(thread_title: str, summary_data: dict[str, Any]) -> dict[
             }
         }
     }
+
+
+def build_summary_text(summary_data: dict[str, Any]) -> dict[str, Any]:
+    """生成纯文本格式的摘要（用于 reply）"""
+    notice = summary_data.get("notice", "")
+    bullets = summary_data.get("bullets", [])
+    footer = summary_data.get("footer", "")
+    mention_open_ids = summary_data.get("mention_open_ids") or []
+    
+    # 构建文本内容
+    lines = []
+    
+    # 添加 @ 人员和通知
+    mention_parts = []
+    for open_id in mention_open_ids:
+        mention_parts.append(f'<at id="{open_id}"></at>')
+    if mention_parts:
+        lines.append("".join(mention_parts) + " " + notice)
+    else:
+        lines.append(notice)
+    
+    lines.append("")
+    lines.append("【摘要】")
+    
+    # 添加要点
+    for bullet in bullets:
+        lines.append(f"- {bullet}")
+    
+    # 添加 footer
+    if footer:
+        lines.append("")
+        lines.append(footer)
+    
+    return {"text": "\n".join(lines)}
