@@ -8,6 +8,8 @@ from openclaw_feishu_cron_kit.jobs_sync import (
     TEMP_JOB_ID_PLACEHOLDER,
     build_add_command,
     build_edit_command,
+    build_schedule_flags,
+    format_openclaw_duration,
     merge_job_defaults,
     normalize_job_spec,
     parse_openclaw_json_output,
@@ -131,3 +133,23 @@ def test_parse_openclaw_json_output_skips_plugin_banner() -> None:
     payload = parse_openclaw_json_output(raw)
 
     assert payload["jobs"][0]["id"] == "job-1"
+
+
+def test_format_openclaw_duration_supports_ms_fields() -> None:
+    assert format_openclaw_duration(10800000) == "3h"
+    assert format_openclaw_duration("300000") == "5m"
+
+
+def test_build_schedule_flags_supports_every_ms_and_stagger_ms() -> None:
+    job = normalize_job_spec(
+        {
+            "name": "每3小时任务",
+            "agent": "blogger",
+            "schedule": {"kind": "every", "everyMs": 10800000, "staggerMs": 300000},
+            "payload": {"kind": "agentTurn", "message": "echo ok"},
+        }
+    )
+
+    flags = build_schedule_flags(job)
+
+    assert flags == ["--every", "3h", "--stagger", "5m"]

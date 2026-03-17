@@ -82,6 +82,36 @@ def normalize_job_spec(job: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def format_openclaw_duration(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return ""
+        if text.isdigit():
+            value = int(text)
+        else:
+            return text
+    if not isinstance(value, (int, float)):
+        raise ValueError(f"无法识别的 duration 值: {value}")
+
+    milliseconds = int(value)
+    if milliseconds <= 0:
+        raise ValueError(f"duration 必须大于 0: {value}")
+
+    units = (
+        ("d", 24 * 60 * 60 * 1000),
+        ("h", 60 * 60 * 1000),
+        ("m", 60 * 1000),
+        ("s", 1000),
+    )
+    for suffix, base in units:
+        if milliseconds % base == 0:
+            return f"{milliseconds // base}{suffix}"
+    return f"{milliseconds}ms"
+
+
 def build_schedule_flags(job: dict[str, Any]) -> list[str]:
     schedule = job["schedule"]
     flags: list[str] = []
@@ -94,7 +124,7 @@ def build_schedule_flags(job: dict[str, Any]) -> list[str]:
         if schedule.get("tz"):
             flags.extend(["--tz", str(schedule["tz"])])
     elif kind == "every":
-        every = str(schedule.get("every") or schedule.get("everyMs") or "").strip()
+        every = format_openclaw_duration(schedule.get("every") or schedule.get("everyMs"))
         if not every:
             raise ValueError(f"job {job['name']} 缺少 schedule.every")
         flags.extend(["--every", every])
@@ -106,8 +136,11 @@ def build_schedule_flags(job: dict[str, Any]) -> list[str]:
 
     if schedule.get("exact"):
         flags.append("--exact")
-    if schedule.get("stagger"):
-        flags.extend(["--stagger", str(schedule["stagger"])])
+    stagger = schedule.get("stagger")
+    if stagger is None:
+        stagger = schedule.get("staggerMs")
+    if stagger:
+        flags.extend(["--stagger", format_openclaw_duration(stagger)])
     return flags
 
 
