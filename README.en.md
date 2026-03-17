@@ -307,6 +307,25 @@ Cron example:
 */5 * * * * cd /path/to/openclaw-feishu-delivery && /usr/bin/python3 scripts/process_retry_queue.py >> logs/retry-worker.log 2>&1
 ```
 
+Treat the retry worker as a host-local cron or systemd timer, not as an agent scheduled job.
+
+```ascii
+Recommended
+--------------------------------
+host cron / systemd timer
+  -> process_retry_queue.py
+  -> only consumes feishu-retry-queue.json
+  -> does not occupy main / blogger / product agent concurrency
+
+Not recommended
+--------------------------------
+OpenClaw jobs.json
+  -> agentId = main
+  -> payload.kind = systemEvent
+  -> looks like a manager-agent task in dashboards
+  -> easy to confuse with agent execution slots
+```
+
 ## Runtime Files
 
 ```ascii

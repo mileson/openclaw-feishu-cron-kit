@@ -180,21 +180,6 @@
         "kind": "agentTurn",
         "message": "生成 Skill 分发建议并调用 send_message.py 发送 skill-distribution 模板。"
       }
-    },
-    {
-      "id": "feishu-retry-worker",
-      "agentId": "main",
-      "name": "飞书失败补发队列处理（每5分钟）",
-      "enabled": true,
-      "schedule": {
-        "kind": "cron",
-        "expr": "*/5 * * * *",
-        "tz": "Asia/Shanghai"
-      },
-      "payload": {
-        "kind": "systemEvent",
-        "text": "执行 python3 scripts/send_message.py --mode retry-pending --retry-limit 20"
-      }
     }
   ]
 }

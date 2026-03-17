@@ -11,6 +11,8 @@ venv/
 # Local runtime data
 state/*.json
 logs/*.jsonl
+runtime/*
+!runtime/.gitkeep
 
 # System
 .DS_Store

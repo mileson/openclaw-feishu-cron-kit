@@ -423,6 +423,25 @@ python3 scripts/process_retry_queue.py
 */5 * * * * cd /path/to/openclaw-feishu-delivery && /usr/bin/python3 scripts/process_retry_queue.py >> logs/retry-worker.log 2>&1
 ```
 
+推荐把补发 worker 当成宿主机本地任务，不要注册成某个 agent 的定时任务。
+
+```ascii
+推荐
+────────────────────────────────
+宿主机 cron / systemd timer
+  -> process_retry_queue.py
+  -> 只消费 feishu-retry-queue.json
+  -> 不占用 main / blogger / product 等 agent 并发
+
+不推荐
+────────────────────────────────
+OpenClaw jobs.json
+  -> agentId = main
+  -> payload.kind = systemEvent
+  -> 在控制台里看起来像总管任务
+  -> 容易和 agent 运行槽位混淆
+```
+
 ## 固定话题是怎么工作的
 
 ```ascii

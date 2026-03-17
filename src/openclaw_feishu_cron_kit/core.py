@@ -45,9 +45,11 @@ RETRY_MAX_ATTEMPTS = 3
 @dataclass
 class AppSettings:
     project_root: Path
+    runtime_dir: Path
     templates_file: Path
     jobs_file: Path | None
     accounts_file: Path | None
+    openclaw_config_file: Path | None
     state_dir: Path
     logs_dir: Path
     entry_script: Path
@@ -75,6 +77,44 @@ class AppSettings:
 
 def iso_now() -> str:
     return datetime.now().isoformat(timespec="seconds")
+
+
+def resolve_runtime_file(
+    cli_value: str | None,
+    runtime_dir: Path,
+    runtime_filename: str,
+    fallback_path: Path | None,
+) -> Path | None:
+    if cli_value:
+        return Path(cli_value)
+
+    runtime_path = runtime_dir / runtime_filename
+    if runtime_path.exists():
+        return runtime_path
+
+    return fallback_path
+
+
+def extract_app_credentials(account: dict[str, Any] | None) -> tuple[str, str] | None:
+    if not isinstance(account, dict):
+        return None
+
+    app_id = str(account.get("app_id") or account.get("appId") or "").strip()
+    app_secret = str(account.get("app_secret") or account.get("appSecret") or "").strip()
+    if app_id and app_secret:
+        return app_id, app_secret
+    return None
+
+
+def load_openclaw_account_registry(config_path: Path | None) -> dict[str, Any] | None:
+    if not config_path or not config_path.exists():
+        return None
+
+    data = json.loads(config_path.read_text(encoding="utf-8"))
+    accounts = ((data.get("channels") or {}).get("feishu") or {}).get("accounts") or {}
+    if isinstance(accounts, dict):
+        return accounts
+    return None
 
 
 def load_template_registry(settings: AppSettings) -> dict[str, Any]:
@@ -284,10 +324,23 @@ def load_account_credentials(settings: AppSettings, agent_id: str | None) -> tup
             account = accounts[agent_id]
         else:
             account = accounts.get("default") or accounts.get("main")
-        if account and account.get("app_id") and account.get("app_secret"):
-            return account["app_id"], account["app_secret"]
+        credentials = extract_app_credentials(account)
+        if credentials:
+            return credentials
 
-    raise ValueError("未提供飞书凭证，请配置 FEISHU_APP_ID / FEISHU_APP_SECRET，或提供 accounts 文件")
+    openclaw_accounts = load_openclaw_account_registry(settings.openclaw_config_file)
+    if openclaw_accounts:
+        if agent_id and agent_id in openclaw_accounts:
+            credentials = extract_app_credentials(openclaw_accounts.get(agent_id))
+            if credentials:
+                return credentials
+
+        for fallback_key in ("default", "main"):
+            credentials = extract_app_credentials(openclaw_accounts.get(fallback_key))
+            if credentials:
+                return credentials
+
+    raise ValueError("未提供飞书凭证，请配置 FEISHU_APP_ID / FEISHU_APP_SECRET，提供 accounts 文件，或提供 OpenClaw openclaw.json")
 
 
 def parse_response_json(response: requests.Response) -> dict[str, Any]:
@@ -730,16 +783,38 @@ def send_text_message(settings: AppSettings, args: argparse.Namespace) -> int:
 
 def build_settings_from_args(args: argparse.Namespace, entry_script: Path) -> AppSettings:
     project_root = entry_script.resolve().parents[1]
-    templates_file = Path(args.templates_file) if args.templates_file else project_root / "examples" / "feishu-templates.example.json"
+    runtime_dir = project_root / "runtime"
+    templates_file = resolve_runtime_file(
+        args.templates_file,
+        runtime_dir,
+        "feishu-templates.local.json",
+        project_root / "examples" / "feishu-templates.example.json",
+    )
     jobs_file = Path(args.jobs_file) if args.jobs_file else project_root / "examples" / "jobs.example.json"
-    accounts_file = Path(args.accounts_file) if args.accounts_file else project_root / "examples" / "accounts.example.json"
+    accounts_file = resolve_runtime_file(
+        args.accounts_file,
+        runtime_dir,
+        "accounts.local.json",
+        project_root / "examples" / "accounts.example.json",
+    )
+    openclaw_config_file = Path(args.openclaw_config_file) if args.openclaw_config_file else None
+    if not openclaw_config_file:
+        env_openclaw_config = os.environ.get("OPENCLAW_CONFIG")
+        if env_openclaw_config:
+            openclaw_config_file = Path(env_openclaw_config)
+        else:
+            candidate = Path.home() / ".openclaw" / "openclaw.json"
+            if candidate.exists():
+                openclaw_config_file = candidate
     state_dir = Path(args.state_dir) if args.state_dir else project_root / "state"
     logs_dir = Path(args.logs_dir) if args.logs_dir else project_root / "logs"
     return AppSettings(
         project_root=project_root,
+        runtime_dir=runtime_dir,
         templates_file=templates_file,
         jobs_file=jobs_file,
         accounts_file=accounts_file,
+        openclaw_config_file=openclaw_config_file,
         state_dir=state_dir,
         logs_dir=logs_dir,
         entry_script=entry_script,
@@ -760,6 +835,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--jobs-file")
     parser.add_argument("--templates-file")
     parser.add_argument("--accounts-file")
+    parser.add_argument("--openclaw-config-file")
     parser.add_argument("--state-dir")
     parser.add_argument("--logs-dir")
     parser.add_argument("--thread-mode", choices=sorted(THREAD_MODES), default="auto")

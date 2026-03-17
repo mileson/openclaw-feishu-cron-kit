@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "defaults": {
+    "session": "isolated",
+    "wake": "now",
+    "timeout_seconds": 300
+  },
+  "jobs": [
+    {
+      "match": {
+        "name": "进化官Skill智能分发（每6小时）"
+      },
+      "name": "进化官Skill智能分发（每6小时）",
+      "description": "根据 agent 对话记录，从进化官工作区选择最合适的 skill 并发送固定话题汇报",
+      "enabled": true,
+      "agent": "evolution",
+      "schedule": {
+        "kind": "cron",
+        "expr": "0 4,10,16,22 * * *",
+        "tz": "Asia/Shanghai"
+      },
+      "payload": {
+        "kind": "agentTurn",
+        "message": "【进化官定时任务】Skill智能分发\n\n任务目标：根据 agent 对话记录，从进化官工作区选择最合适的 skill，分发给最适合的 agent。\n\n发送飞书时必须直接调用 repo 脚本：\n```bash\npython3 /root/.openclaw/projects/openclaw-feishu-delivery/scripts/send_message.py \\\n  --mode template \\\n  --job-id \"{{job_id}}\" \\\n  --jobs-file \"/root/.openclaw/cron/jobs.json\" \\\n  --templates-file \"/root/.openclaw/projects/openclaw-feishu-delivery/runtime/feishu-templates.local.json\" \\\n  --accounts-file \"/root/.openclaw/projects/openclaw-feishu-delivery/runtime/accounts.local.json\" \\\n  --agent-id evolution \\\n  --template \"skill-distribution\" \\\n  --data '{...}'\n```\n\n禁止再调用旧的 /root/.openclaw/scripts/send_feishu_message.py。"
+      }
+    }
+  ]
+}
