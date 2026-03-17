@@ -189,11 +189,37 @@ def run_openclaw(openclaw_bin: str, args: list[str]) -> subprocess.CompletedProc
     )
 
 
+def parse_openclaw_json_output(raw: str) -> dict[str, Any]:
+    lines = raw.splitlines()
+    candidates: list[str] = []
+
+    stripped = raw.lstrip()
+    if stripped:
+        candidates.append(stripped)
+
+    for index, line in enumerate(lines):
+        if line.lstrip().startswith(("{", "[")) and not line.lstrip().startswith("[plugins]"):
+            candidates.append("\n".join(lines[index:]).strip())
+
+    for candidate in candidates:
+        if not candidate:
+            continue
+        try:
+            payload = json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict):
+            return payload
+
+    preview = raw.strip().splitlines()[:8]
+    raise ValueError(f"无法从 openclaw 输出中解析 JSON: {' | '.join(preview)}")
+
+
 def list_jobs(openclaw_bin: str) -> list[dict[str, Any]]:
     proc = run_openclaw(openclaw_bin, ["cron", "list", "--all", "--json"])
     if proc.returncode != 0:
         raise RuntimeError(f"openclaw cron list 失败: {(proc.stderr or proc.stdout).strip()}")
-    payload = json.loads(proc.stdout)
+    payload = parse_openclaw_json_output(proc.stdout)
     jobs = payload.get("jobs")
     if not isinstance(jobs, list):
         raise ValueError("openclaw cron list --json 返回中缺少 jobs 数组")

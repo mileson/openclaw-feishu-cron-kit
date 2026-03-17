@@ -10,6 +10,7 @@ from openclaw_feishu_cron_kit.jobs_sync import (
     build_edit_command,
     merge_job_defaults,
     normalize_job_spec,
+    parse_openclaw_json_output,
     render_job_text,
 )
 
@@ -114,3 +115,19 @@ def test_jobs_sync_builds_commands_with_real_job_id_placeholders() -> None:
     edit_command = build_edit_command("openclaw", job, "job-123", "job-123")
     assert 'python3 scripts/send_message.py --job-id "job-123"' in edit_command
     assert "--enable" in edit_command
+
+
+def test_parse_openclaw_json_output_skips_plugin_banner() -> None:
+    raw = """
+    [plugins] feishu_chat: Registered feishu_chat
+    [plugins] feishu_doc: Registered feishu_fetch_doc
+    {
+      "jobs": [
+        {"id": "job-1", "name": "demo"}
+      ]
+    }
+    """.strip()
+
+    payload = parse_openclaw_json_output(raw)
+
+    assert payload["jobs"][0]["id"] == "job-1"
