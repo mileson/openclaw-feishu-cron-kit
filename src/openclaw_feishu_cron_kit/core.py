@@ -14,7 +14,7 @@ from uuid import uuid4
 
 import requests
 
-from .renderer import build_generic_card, build_summary_post
+from .renderer import build_generic_card, build_summary_post, build_summary_text
 from .storage import append_jsonl, load_json_file, save_json_file
 
 DELIVERY_CHANNELS = {"direct", "message", "topic"}
@@ -517,8 +517,19 @@ def maybe_send_thread_summary_reply(settings: AppSettings, access_token: str, th
     root_message_id = ((response_meta or {}).get("data") or {}).get("root_id") or ((response_meta or {}).get("data") or {}).get("message_id")
     if not root_message_id:
         raise ValueError("未能解析 root_message_id，无法发送摘要 reply")
+    summary_channel = str(((thread_options or {}).get("summary_reply") or {}).get("channel") or "post").strip().lower() or "post"
+    if summary_channel == "text":
+        content = build_summary_text(summary_data)
+        return reply_message_request(access_token, root_message_id, "text", content, "群话题摘要回复")
+
     content = build_summary_post(thread_options["title"], summary_data)
-    return reply_message_request(access_token, root_message_id, "post", content, "群话题摘要回复")
+    result = reply_message_request(access_token, root_message_id, "post", content, "群话题摘要回复")
+    if result["ok"] or not is_invalid_message_content(result["result"]):
+        return result
+
+    print("⚠️ 群话题摘要回复 post 内容被拒绝，降级为 text 重试")
+    fallback_content = build_summary_text(summary_data)
+    return reply_message_request(access_token, root_message_id, "text", fallback_content, "群话题摘要回复(text)")
 
 
 def load_retry_record(settings: AppSettings, record_id: str) -> dict[str, Any] | None:
@@ -554,6 +565,14 @@ def is_retryable_error(result_meta: dict[str, Any] | None = None, detail: str | 
         return True
     text = extract_error_text(result_meta=result_meta, detail=detail)
     return any(token in text for token in RETRYABLE_ERROR_TOKENS)
+
+
+def is_invalid_message_content(result_meta: dict[str, Any] | None = None) -> bool:
+    if not result_meta:
+        return False
+    if result_meta.get("code") == 230001:
+        return True
+    return "invalid message content" in extract_error_text(result_meta=result_meta)
 
 
 def serialize_retry_args(args: argparse.Namespace) -> dict[str, Any]:
@@ -754,6 +773,10 @@ def send_template_message(settings: AppSettings, args: argparse.Namespace) -> in
         summary_result = maybe_send_thread_summary_reply(settings, access_token, thread_options, response_meta, data)
         if summary_result:
             write_send_audit(settings, "success" if summary_result["ok"] else "failed", args.agent_id, "thread-summary-reply", route=route, template_name=f"{args.template}#summary", response_meta=summary_result["result"])
+            summary_required = bool((((thread_options or {}).get("summary_reply")) or {}).get("required"))
+            if summary_required and not summary_result["ok"]:
+                success = False
+                response_meta = summary_result["result"]
 
     if not success:
         enqueue_retry(settings, args, args.agent_id, args.template, route=route, response_meta=response_meta)

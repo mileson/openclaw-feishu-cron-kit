@@ -118,3 +118,20 @@ def build_summary_post(thread_title: str, summary_data: dict[str, Any]) -> dict[
             }
         }
     }
+
+
+def build_summary_text(summary_data: dict[str, Any]) -> dict[str, Any]:
+    notice = summary_data["notice"]
+    bullets = summary_data["bullets"]
+    footer = summary_data.get("footer")
+    mention_open_ids = summary_data.get("mention_open_ids") or []
+
+    lines: list[str] = []
+    if mention_open_ids:
+        lines.append(" ".join(f'<at user_id="{open_id}"></at>' for open_id in mention_open_ids))
+    lines.append(notice)
+    lines.append("【摘要】")
+    lines.extend([f"- {bullet}" for bullet in bullets])
+    if footer:
+        lines.append(footer)
+    return {"text": "\n".join(lines)}
