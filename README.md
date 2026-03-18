@@ -114,6 +114,8 @@ openclaw-feishu-delivery
 ├─ scripts/
 │  ├─ send_message.py      # 主 CLI 入口
 │  └─ process_retry_queue.py
+│  ├─ materialize_template_presentations.py
+│  └─ scaffold_agent_task.py
 ├─ examples/
 │  ├─ feishu-templates.example.json
 │  ├─ jobs.example.json
@@ -125,6 +127,94 @@ openclaw-feishu-delivery
 ├─ pyproject.toml
 └─ README.md
 ```
+
+## 配置优先的运行模型
+
+这套工具现在的运行期原则很简单：
+
+```ascii
+模板配置
+  -> route.transport.provider   # feishu / telegram / discord
+  -> route.delivery.channel     # direct / message / topic
+  -> presentation.blocks        # 卡片怎么拼
+  -> required_fields            # payload 最低字段要求
+
+脚本
+  -> 读取模板配置
+  -> 校验 payload
+  -> 按 blocks 拼卡片
+  -> 按 provider 分发
+```
+
+也就是说，脚本本身不再承担“这个模板长什么样”的业务语义。  
+运行期真正决定消息内容的，是模板配置中的 `presentation.blocks`。
+
+推荐的模板结构如下：
+
+```json
+{
+  "templates": {
+    "daily-knowledge": {
+      "description": "每日知识整理",
+      "header_template": "blue",
+      "required_fields": ["title", "summary", "report_date", "organized_at", "execution_steps", "timestamp", "thread_summary"],
+      "presentation": {
+        "header_title_template": "📚 每日知识整理 · {report_date}",
+        "blocks": [
+          {"type": "markdown", "template": "✅ **{title}**\n{summary}"},
+          {
+            "type": "facts",
+            "title": "执行概览",
+            "items": [
+              {"label": "报告日期", "path": "report_date"},
+              {"label": "整理时间", "path": "organized_at"},
+              {"label": "发送时间", "path": "timestamp"}
+            ]
+          },
+          {"type": "divider"},
+          {
+            "type": "record_list",
+            "title": "执行步骤",
+            "path": "execution_steps",
+            "title_template": "**{name}**",
+            "lines": ["状态：{status}", "文件：`{file}`", "{detail}"]
+          }
+        ]
+      },
+      "route": {
+        "transport": {"provider": "feishu", "account": "main"},
+        "target": {"id": "oc_xxx", "type": "chat_id"},
+        "delivery": {"channel": "topic"},
+        "policy": {"lock_target": true, "lock_delivery": true},
+        "thread": {
+          "enabled": true,
+          "binding_key_template": "main:daily-knowledge",
+          "title_template": "【每日知识整理】",
+          "summary_reply": {"enabled": true, "required": true, "channel": "text"}
+        }
+      }
+    }
+  }
+}
+```
+
+## 旧模板迁移为配置 blocks
+
+如果你手里还有旧的 `renderer` 模板，不需要再把渲染逻辑写回 Python。  
+直接把旧模板一次性 materialize 成 `presentation.blocks` 即可：
+
+```bash
+python3 scripts/materialize_template_presentations.py \
+  --templates-file runtime/feishu-templates.local.json \
+  --write \
+  --drop-renderer
+```
+
+这个脚本只负责做一次迁移：
+
+- 根据已知模板类型生成标准 `presentation.blocks`
+- 把旧的 `renderer` 字段移除
+- 让运行期只依赖配置，不再依赖模板名对应的 Python 逻辑
 
 ## 工作原理
 
@@ -153,6 +243,42 @@ cron / agent
 不可重试错误
   -> 直接失败
   -> 不进入补发队列
+```
+
+## 一键新增 Agent 任务
+
+后续新增一个 Agent 的飞书定时任务，不建议手改多份 JSON。  
+直接用脚手架生成模板、任务定义和 payload 示例：
+
+```bash
+python3 scripts/scaffold_agent_task.py \
+  --runtime-dir runtime \
+  --repo-path /root/.openclaw/projects/openclaw-feishu-delivery \
+  --template-name weekly-ops-report \
+  --template-description "每周运维汇总" \
+  --agent-id engineer \
+  --job-name "每周运维汇总" \
+  --job-description "每周汇总核心运维状态并发送固定话题报告" \
+  --layout diagnosis-report \
+  --channel topic \
+  --transport-provider feishu \
+  --transport-account engineer \
+  --target-id oc_xxx \
+  --binding-key engineer:weekly-ops-report \
+  --thread-title "【每周运维汇总】" \
+  --cron "0 10 * * 1"
+```
+
+脚手架会生成：
+
+- `runtime/feishu-templates.local.json` 中的新模板
+- `runtime/jobs-spec.local.json` 中的新任务定义
+- `runtime/payloads/<template>.example.json` 示例 payload
+
+然后再同步到 OpenClaw：
+
+```bash
+python3 scripts/sync_openclaw_jobs.py --spec-file runtime/jobs-spec.local.json
 ```
 
 ## 如果希望让“小龙虾 OpenClaw”安装这套工具，提示词如下

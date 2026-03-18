@@ -6,6 +6,7 @@ import json
 import os
 import subprocess
 import sys
+from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -21,6 +22,7 @@ DELIVERY_CHANNELS = {"direct", "message", "topic"}
 USER_TARGET_TYPES = {"open_id", "union_id", "user_id", "email"}
 GROUP_TARGET_TYPES = {"chat_id"}
 THREAD_MODES = {"auto", "off", "new", "reply"}
+SUPPORTED_TRANSPORT_PROVIDERS = {"feishu"}
 RETRYABLE_HTTP_STATUS = {408, 409, 425, 429, 500, 502, 503, 504}
 RETRYABLE_ERROR_TOKENS = [
     "timeout",
@@ -126,7 +128,7 @@ def get_template_config(registry: dict[str, Any], template_name: str) -> dict[st
     template = templates.get(template_name)
     if not template:
         raise ValueError(f"未知模板: {template_name}")
-    return template
+    return deepcopy(template)
 
 
 def normalize_route_config(raw_value: dict[str, Any]) -> dict[str, Any]:
@@ -136,10 +138,14 @@ def normalize_route_config(raw_value: dict[str, Any]) -> dict[str, Any]:
     delivery = raw_value.get("delivery") or {}
     policy = raw_value.get("policy") or {}
     thread = raw_value.get("thread") or {}
+    transport = raw_value.get("transport") or {}
 
     target_type = target.get("type")
     if target_type not in USER_TARGET_TYPES | GROUP_TARGET_TYPES:
         raise ValueError(f"无效 target.type: {target_type}")
+    provider = str(transport.get("provider") or "feishu").strip().lower() or "feishu"
+    if provider not in SUPPORTED_TRANSPORT_PROVIDERS:
+        raise ValueError(f"当前暂不支持 transport.provider={provider}")
     channel = delivery.get("channel")
     if channel not in DELIVERY_CHANNELS:
         raise ValueError(f"无效 delivery.channel: {channel}")
@@ -149,6 +155,10 @@ def normalize_route_config(raw_value: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("message/topic 通道只允许群目标")
 
     return {
+        "transport": {
+            "provider": provider,
+            "account": str(transport.get("account") or "").strip(),
+        },
         "target": {"id": str(target.get("id")), "type": target_type},
         "delivery": {"channel": channel},
         "policy": {
@@ -189,6 +199,11 @@ def resolve_route(template_config: dict[str, Any], cli_overrides: dict[str, Any]
         if route["policy"]["lock_delivery"]:
             raise ValueError("模板已锁定 delivery，禁止覆盖 delivery_channel")
         route["delivery"]["channel"] = cli_overrides["delivery_channel"]
+
+    if cli_overrides.get("transport_provider"):
+        route["transport"]["provider"] = cli_overrides["transport_provider"]
+    if cli_overrides.get("transport_account"):
+        route["transport"]["account"] = cli_overrides["transport_account"]
 
     return normalize_route_config(route)
 
@@ -281,6 +296,7 @@ def write_send_audit(settings: AppSettings, status: str, agent_id: str | None, m
         "template": template_name,
     }
     if route:
+        payload["transport_provider"] = route["transport"]["provider"]
         payload["target_id"] = route["target"]["id"]
         payload["target_type"] = route["target"]["type"]
         payload["delivery_channel"] = route["delivery"]["channel"]
@@ -311,7 +327,7 @@ def write_retry_audit(settings: AppSettings, action: str, record: dict[str, Any]
     append_jsonl(settings.retry_audit_log, payload)
 
 
-def load_account_credentials(settings: AppSettings, agent_id: str | None) -> tuple[str, str]:
+def load_account_credentials(settings: AppSettings, agent_id: str | None, account_name: str | None = None) -> tuple[str, str]:
     env_app_id = os.environ.get("FEISHU_APP_ID")
     env_app_secret = os.environ.get("FEISHU_APP_SECRET")
     if env_app_id and env_app_secret:
@@ -320,7 +336,9 @@ def load_account_credentials(settings: AppSettings, agent_id: str | None) -> tup
     if settings.accounts_file and settings.accounts_file.exists():
         data = json.loads(settings.accounts_file.read_text(encoding="utf-8"))
         accounts = data.get("accounts", data)
-        if agent_id and agent_id in accounts:
+        if account_name and account_name in accounts:
+            account = accounts[account_name]
+        elif agent_id and agent_id in accounts:
             account = accounts[agent_id]
         else:
             account = accounts.get("default") or accounts.get("main")
@@ -330,6 +348,11 @@ def load_account_credentials(settings: AppSettings, agent_id: str | None) -> tup
 
     openclaw_accounts = load_openclaw_account_registry(settings.openclaw_config_file)
     if openclaw_accounts:
+        if account_name and account_name in openclaw_accounts:
+            credentials = extract_app_credentials(openclaw_accounts.get(account_name))
+            if credentials:
+                return credentials
+
         if agent_id and agent_id in openclaw_accounts:
             credentials = extract_app_credentials(openclaw_accounts.get(agent_id))
             if credentials:
@@ -473,6 +496,9 @@ def dispatch_topic_message(settings: AppSettings, access_token: str, route: dict
 
 
 def dispatch_message(settings: AppSettings, access_token: str, route: dict[str, Any], msg_type: str, content_payload: dict[str, Any], thread_options: dict[str, Any] | None = None) -> dict[str, Any]:
+    provider = route["transport"]["provider"]
+    if provider != "feishu":
+        raise ValueError(f"当前尚未实现 transport.provider={provider} 的发送器")
     channel = route["delivery"]["channel"]
     if channel == "direct":
         return post_message_request(access_token, route, msg_type, content_payload, "私聊消息")
@@ -755,13 +781,20 @@ def send_template_message(settings: AppSettings, args: argparse.Namespace) -> in
             "target_id": args.target_id,
             "target_type": args.target_type,
             "delivery_channel": args.delivery_channel,
+            "transport_provider": args.transport_provider,
+            "transport_account": args.transport_account,
         },
     )
     thread_options = resolve_thread_options(args, args.template, template_config, route, data)
-    app_id, app_secret = load_account_credentials(settings, args.agent_id)
+    app_id, app_secret = load_account_credentials(settings, args.agent_id, account_name=route["transport"]["account"] or None)
     access_token = get_tenant_access_token(app_id, app_secret)
 
-    print(f"📨 路由解析：channel={route['delivery']['channel']} target={route['target']['type']}:{route['target']['id']}")
+    print(
+        "📨 路由解析："
+        f"provider={route['transport']['provider']} "
+        f"channel={route['delivery']['channel']} "
+        f"target={route['target']['type']}:{route['target']['id']}"
+    )
     if thread_options:
         print(f"🧵 固定话题：key={thread_options['binding_key']} title={thread_options['title']}")
 
@@ -789,13 +822,14 @@ def send_text_message(settings: AppSettings, args: argparse.Namespace) -> int:
     if not args.content:
         raise ValueError("text 模式必须提供 --content")
     route = {
+        "transport": {"provider": args.transport_provider or "feishu", "account": args.transport_account or args.agent_id},
         "target": {"id": args.target_id, "type": args.target_type},
         "delivery": {"channel": args.delivery_channel},
         "policy": {"lock_target": False, "lock_delivery": False},
         "thread": {"enabled": False, "summary_reply": {"enabled": False}},
     }
     route = normalize_route_config(route)
-    app_id, app_secret = load_account_credentials(settings, args.agent_id)
+    app_id, app_secret = load_account_credentials(settings, args.agent_id, account_name=route["transport"]["account"] or None)
     access_token = get_tenant_access_token(app_id, app_secret)
     result = dispatch_message(settings, access_token, route, "text", {"text": args.content})
     if not result["ok"]:
@@ -854,6 +888,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--target-id")
     parser.add_argument("--target-type")
     parser.add_argument("--delivery-channel")
+    parser.add_argument("--transport-provider")
+    parser.add_argument("--transport-account")
     parser.add_argument("--job-id")
     parser.add_argument("--jobs-file")
     parser.add_argument("--templates-file")

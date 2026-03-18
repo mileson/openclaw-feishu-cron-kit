@@ -86,6 +86,8 @@ openclaw-feishu-delivery
 ├─ scripts/
 │  ├─ send_message.py
 │  └─ process_retry_queue.py
+│  ├─ materialize_template_presentations.py
+│  └─ scaffold_agent_task.py
 ├─ examples/
 │  ├─ feishu-templates.example.json
 │  ├─ jobs.example.json
@@ -98,6 +100,40 @@ openclaw-feishu-delivery
 ├─ README.md
 └─ README.en.md
 ```
+
+## Config-First Runtime Model
+
+The runtime model is now intentionally configuration-driven:
+
+```ascii
+template config
+  -> route.transport.provider   # feishu / telegram / discord
+  -> route.delivery.channel     # direct / message / topic
+  -> presentation.blocks        # how the message is assembled
+  -> required_fields            # minimum payload contract
+
+scripts
+  -> read config
+  -> validate payload
+  -> render from blocks
+  -> dispatch by provider
+```
+
+Runtime behavior should come from config, not from Python template-specific branches.
+
+## Migrate Old Renderers Into Config Blocks
+
+If you still have legacy templates with `renderer`, convert them once into `presentation.blocks`:
+
+```bash
+python3 scripts/materialize_template_presentations.py \
+  --templates-file runtime/feishu-templates.local.json \
+  --write \
+  --drop-renderer
+```
+
+This migration script exists only to materialize config.  
+After that, runtime behavior is driven entirely by template config.
 
 ## How It Works
 
@@ -127,6 +163,35 @@ non-retryable failure
   -> fail immediately
   -> do not enter retry queue
 ```
+
+## One-Command Task Scaffolding
+
+To add a new agent delivery task, scaffold template config, job spec, and example payload in one step:
+
+```bash
+python3 scripts/scaffold_agent_task.py \
+  --runtime-dir runtime \
+  --repo-path /root/.openclaw/projects/openclaw-feishu-delivery \
+  --template-name weekly-ops-report \
+  --template-description "Weekly Ops Report" \
+  --agent-id engineer \
+  --job-name "Weekly Ops Report" \
+  --job-description "Summarize core ops status into a fixed-thread report" \
+  --layout diagnosis-report \
+  --channel topic \
+  --transport-provider feishu \
+  --transport-account engineer \
+  --target-id oc_xxx \
+  --binding-key engineer:weekly-ops-report \
+  --thread-title "【Weekly Ops Report】" \
+  --cron "0 10 * * 1"
+```
+
+The scaffold writes:
+
+- a template entry into `runtime/feishu-templates.local.json`
+- a job spec into `runtime/jobs-spec.local.json`
+- an example payload into `runtime/payloads/`
 
 ## Prompt for Xiaolongxia OpenClaw
 
