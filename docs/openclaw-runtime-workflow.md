@@ -2,6 +2,13 @@
 
 这个文件描述的是“开源 repo 代码”和“本地私有运行时配置”如何协作。
 
+相关文档：
+
+- [`../README.md`](../README.md)
+- [`template-contract.md`](template-contract.md)
+- [`presentation-schema.md`](presentation-schema.md)
+- [`agent-onboarding.md`](agent-onboarding.md)
+
 ```ascii
 GitHub repo
 openclaw-feishu-delivery/

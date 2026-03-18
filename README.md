@@ -28,6 +28,21 @@
   -> 第 3 次还失败才标记最终失败
 ```
 
+## 文档导航
+
+如果你准备把这套项目作为团队里的消息投递底座，建议按下面顺序阅读：
+
+- [`docs/openclaw-runtime-workflow.md`](docs/openclaw-runtime-workflow.md)
+  - 看清 `runtime/feishu-templates.local.json`、`runtime/accounts.local.json`、`runtime/jobs-spec.local.json` 的职责边界
+- [`docs/template-contract.md`](docs/template-contract.md)
+  - 看清任务 prompt / 子脚本到底应该只提供什么 payload，哪些 route / topic / account 语义不该再写进任务
+- [`docs/presentation-schema.md`](docs/presentation-schema.md)
+  - 看清 `presentation.schema + structure + styles + blocks` 怎么表达卡片结构，而不是继续在脚本里写 renderer 语义
+- [`docs/agent-onboarding.md`](docs/agent-onboarding.md)
+  - 看清一个新 agent 怎么接入这套项目，尤其是 runtime account 和“首个任务模板”如何建立
+- [`docs/migrate-from-legacy-openclaw.md`](docs/migrate-from-legacy-openclaw.md)
+  - 如果你之前已经有旧版 `workspace/docs`、旧 prompt、旧发送脚本，这里是迁移地图
+
 ## 功能亮点
 
 - 支持 `template` / `text` / `retry-pending` 三种模式
