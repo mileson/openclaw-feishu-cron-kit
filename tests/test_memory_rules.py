@@ -45,6 +45,35 @@ def test_inject_delivery_memory_rules_normalizes_legacy_section(tmp_path: Path) 
     assert START_MARKER in updated
 
 
+def test_inject_delivery_memory_rules_strips_legacy_variants(tmp_path: Path) -> None:
+    project_root = tmp_path / "openclaw-feishu-delivery"
+    project_root.mkdir()
+
+    text = """# MEMORY.md - coach
+
+## 飞书消息铁律
+
+所有飞书消息必须使用通用工具：
+
+```bash
+python3 /root/.openclaw/scripts/send_feishu_message.py --template "模板名称" --data 'JSON数据'
+```
+
+统一遵循：`/root/.openclaw/workspace/docs/feishu-message-standard.md`
+
+## 当前状态
+
+- 初始化
+"""
+    updated, action = inject_delivery_memory_rules(text, project_root)
+
+    assert action == "normalized"
+    assert "## 飞书消息铁律" not in updated
+    assert "/root/.openclaw/scripts/send_feishu_message.py" not in updated
+    assert "/root/.openclaw/workspace/docs/feishu-message-standard.md" not in updated
+    assert "## 当前状态" in updated
+
+
 def test_update_memory_file_supports_create_missing(tmp_path: Path) -> None:
     project_root = tmp_path / "openclaw-feishu-delivery"
     workspace_dir = tmp_path / "workspace-product"

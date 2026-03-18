@@ -9,13 +9,20 @@ from pathlib import Path
 START_MARKER = "<!-- openclaw-feishu-delivery:start -->"
 END_MARKER = "<!-- openclaw-feishu-delivery:end -->"
 LEGACY_SECTION_TITLE = "## 飞书消息项目铁律（强制）"
+LEGACY_SECTION_TITLES = [
+    LEGACY_SECTION_TITLE,
+    "## 🔔 飞书消息发送铁律（最高优先级）",
+    "## 飞书消息铁律",
+    "## 飞书消息铁律（强制）",
+]
+MANAGED_BLOCK_TOKEN = "__OPENCLAW_DELIVERY_MANAGED_BLOCK__"
 
 MANAGED_BLOCK_RE = re.compile(
     rf"{re.escape(START_MARKER)}\n.*?\n{re.escape(END_MARKER)}",
     flags=re.S,
 )
 LEGACY_SECTION_RE = re.compile(
-    rf"(?ms)^{re.escape(LEGACY_SECTION_TITLE)}\n.*?(?=^## |\Z)"
+    rf"(?ms)^(?:{'|'.join(re.escape(title) for title in LEGACY_SECTION_TITLES)})\n.*?(?=^## |\Z)"
 )
 
 
@@ -108,16 +115,28 @@ def insert_managed_block(text: str, block: str) -> str:
     return f"{block}\n\n{text.lstrip()}"
 
 
+def cleanup_blank_lines(text: str) -> str:
+    compact = re.sub(r"\n{3,}", "\n\n", text)
+    return compact.strip()
+
+
+def strip_legacy_sections(text: str) -> str:
+    return cleanup_blank_lines(LEGACY_SECTION_RE.sub("", text))
+
+
 def inject_delivery_memory_rules(memory_text: str, project_root: Path) -> tuple[str, str]:
     normalized = memory_text.rstrip("\n")
     block = build_managed_delivery_memory_block(project_root)
 
     if MANAGED_BLOCK_RE.search(normalized):
-        updated = MANAGED_BLOCK_RE.sub(block, normalized, count=1)
+        staged = MANAGED_BLOCK_RE.sub(MANAGED_BLOCK_TOKEN, normalized, count=1)
+        cleaned = strip_legacy_sections(staged)
+        updated = cleaned.replace(MANAGED_BLOCK_TOKEN, block, 1)
         return updated.rstrip() + "\n", "replaced"
 
-    if LEGACY_SECTION_RE.search(normalized):
-        updated = LEGACY_SECTION_RE.sub(block, normalized, count=1)
+    cleaned = strip_legacy_sections(normalized)
+    if cleaned != normalized:
+        updated = insert_managed_block(cleaned, block)
         return updated.rstrip() + "\n", "normalized"
 
     updated = insert_managed_block(normalized, block)
