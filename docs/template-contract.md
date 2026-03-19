@@ -68,6 +68,18 @@ runtime/feishu-templates.local.json
 
 也就是说，任务只说“我要发 `daily-knowledge`”，真正落到哪个群、是不是 fixed topic、要不要自动补摘要、卡片长什么样，全部由模板配置决定。
 
+对于 OpenClaw cron 场景，推荐再往前走一步：
+
+```ascii
+agent cron job
+  -> 只产出模板 payload
+  -> 最终回复写入 OPENCLAW_TEMPLATE_PAYLOAD block
+  -> project wrapper 解析 run summary
+  -> wrapper 调用 send_template_payload()
+```
+
+这样能避免 agent 在 prompt 里临时拼接 `send_message.py --data '{...}'` 并口头声称发送成功。
+
 ## 4. 标准发送方式
 
 任务侧唯一推荐的结构化消息发送方式是：
